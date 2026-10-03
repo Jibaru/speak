@@ -43,3 +43,15 @@ def test_explicit_offset_and_missing_file(tmp_path):
     assert follower.read_new_texts() == []
     transcript.write_text(line(assistant({"type": "text", "text": "Created later."})))
     assert follower.read_new_texts() == ["Created later."]
+
+
+def test_detects_user_interrupt(tmp_path):
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("")
+    follower = TranscriptFollower(transcript)
+    with transcript.open("a") as file:
+        file.write(line(assistant({"type": "text", "text": "Working on it."})))
+        file.write(line({"type": "user", "message": {"content": [{"type": "text", "text": "[Request interrupted by user]"}]}}))
+    update = follower.read_update()
+    assert update.texts == ["Working on it."]
+    assert update.interrupted

@@ -56,7 +56,7 @@ Speech stops when you:
 - send a new prompt,
 - press **⌥ Esc** anywhere (global hotkey, no accessibility permission needed),
 - start dictating with `/voice` or any app opens the microphone,
-- press **Esc** to interrupt Claude while it is narrating.
+- press **Esc** to interrupt Claude while it is narrating (detected from the session transcript).
 
 ## Languages
 

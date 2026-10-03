@@ -1,7 +1,4 @@
 {
-  "modules": [
-    "./interrupt.mjs"
-  ],
   "hooks": {
     "SessionStart": [
       {

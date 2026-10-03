@@ -112,3 +112,16 @@ async def test_idle_daemon_shuts_down(paths, fake_engines, fake_player, monkeypa
 
 async def test_unknown_op(paths, running):
     assert (await request(paths, {"op": "nope"}))["ok"] is False
+
+
+async def test_interrupt_in_transcript_stops_narration(paths, running, tmp_path):
+    _, _, player = running
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("")
+    await request(paths, {"op": "watch", "session": "s", "transcript": str(transcript)})
+    cleared_before = player.cleared
+    with transcript.open("a") as file:
+        file.write(json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]}}) + "\n")
+    await wait_for(lambda: player.cleared > cleared_before)
+    status = await request(paths, {"op": "status"})
+    assert status["speaking"] is False

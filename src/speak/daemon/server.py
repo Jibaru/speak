@@ -55,7 +55,7 @@ class Daemon:
         self._sidecar = sidecar
         self._settings = self._store.load()
         self._speaker = Speaker(self._synthesize, player)
-        self._narrator = Narrator(self._narrate)
+        self._narrator = Narrator(self._narrate, self._interrupted)
         self._sessions: dict[str, _Session] = {}
         self._last_spoken_session: str | None = None
         self._last_activity = time.monotonic()
@@ -169,12 +169,17 @@ class Daemon:
     def _narrate(self, session: str, text: str) -> None:
         self._say(session, self._prepare(text, "full"), preempt=False)
 
+    def _interrupted(self, session: str) -> None:
+        log.info("turn interrupted in session %s", session)
+        self._speaker.stop()
+
     def _say(self, session: str | None, segments: list[Segment], preempt: bool) -> None:
         if not segments:
             return
         if self._needs_project_prefix(session):
             segments = [Segment(self._sessions[session].project, segments[0].lang), *segments]
         self._last_spoken_session = session
+        log.info("speaking %d segments (%s): %s", len(segments), segments[0].lang, segments[0].text[:80])
         self._speaker.speak(segments, preempt=preempt)
 
     def _needs_project_prefix(self, session: str | None) -> bool:
