@@ -128,7 +128,7 @@ class Daemon:
 
     def _op_speak(self, message: dict) -> dict:
         self._settings = self._store.load()
-        segments = self._prepare(message.get("text", ""), message.get("mode", "full"))
+        segments = self._segments(message.get("text", ""), message.get("mode", "full"))
         self._say(message.get("session"), segments, preempt=message.get("preempt", True))
         return {"ok": True, "segments": len(segments)}
 
@@ -146,9 +146,6 @@ class Daemon:
     def _op_unwatch(self, message: dict) -> None:
         self._narrator.unwatch(message["session"])
 
-    def _op_reload(self, _message: dict) -> None:
-        self._settings = self._store.load()
-
     def _op_status(self, _message: dict) -> dict:
         return {
             "ok": True,
@@ -162,12 +159,12 @@ class Daemon:
     def _op_shutdown(self, _message: dict) -> None:
         self.request_shutdown()
 
-    def _prepare(self, text: str, mode: str) -> list[Segment]:
+    def _segments(self, text: str, mode: str) -> list[Segment]:
         preparer = SpeechPreparer(Lexicon.load(self._paths.lexicon_file))
         return preparer.prepare(text, "brief" if mode == "brief" else "full")
 
     def _narrate(self, session: str, text: str) -> None:
-        self._say(session, self._prepare(text, "full"), preempt=False)
+        self._say(session, self._segments(text, "full"), preempt=False)
 
     def _interrupted(self, session: str) -> None:
         log.info("turn interrupted in session %s", session)
