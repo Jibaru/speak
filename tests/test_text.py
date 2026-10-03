@@ -105,3 +105,18 @@ def test_prepare_full_switches_language_per_sentence():
 
 def test_prepare_empty_text():
     assert SpeechPreparer(Lexicon({})).prepare("", "brief") == []
+
+
+def test_long_first_sentence_is_split_at_its_first_clause():
+    preparer = SpeechPreparer(Lexicon({}))
+    text = "Encontré el problema principal, el listener no se limpiaba al desmontar el componente. Ya está."
+    assert [segment.text for segment in preparer.prepare(text)] == [
+        "Encontré el problema principal,",
+        "el listener no se limpiaba al desmontar el componente.",
+        "Ya está.",
+    ]
+
+
+def test_short_first_sentence_is_not_split():
+    preparer = SpeechPreparer(Lexicon({}))
+    assert [segment.text for segment in preparer.prepare("Listo, ya está.")] == ["Listo, ya está."]
