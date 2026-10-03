@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -15,6 +16,7 @@ SAMPLE_RATE = 24000
 KOKORO_MODEL = "mlx-community/Kokoro-82M-bf16"
 KOKORO_LANG_CODES = {"en": "a", "es": "e", "fr": "f", "it": "i", "pt": "p"}
 SAY_BASE_WORDS_PER_MINUTE = 190
+ESPEAK_MAX_DATA_PATH = 120
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +59,7 @@ class KokoroEngine:
         from mlx_audio.tts.utils import load_model
 
         snapshot_download(KOKORO_MODEL)
+        _shorten_espeak_data_path()
         self._model = load_model(KOKORO_MODEL)
         self._paths.model_ready_marker.touch()
 
@@ -76,6 +79,23 @@ class KokoroEngine:
         )
         chunks = [np.asarray(result.audio, dtype=np.float32) for result in results]
         return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+
+
+def _shorten_espeak_data_path() -> None:
+    import espeakng_loader
+    import misaki.espeak  # noqa: F401  (sets the default espeak data path on import)
+    from phonemizer.backend.espeak.wrapper import EspeakWrapper
+
+    data_path = Path(espeakng_loader.get_data_path())
+    if len(str(data_path)) <= ESPEAK_MAX_DATA_PATH:
+        return
+    short_path = Path(tempfile.gettempdir()) / f"speak-espeak-{os.getuid()}"
+    if not (short_path / "phontab").exists():
+        staging = Path(tempfile.mkdtemp(prefix="speak-espeak-"))
+        shutil.copytree(data_path, staging, dirs_exist_ok=True)
+        shutil.rmtree(short_path, ignore_errors=True)
+        staging.rename(short_path)
+    EspeakWrapper.set_data_path(str(short_path))
 
 
 class EngineManager:

@@ -18,7 +18,8 @@ expected_stamp() {
 }
 
 is_ready() {
-  [[ -x "$VENV/bin/python" && -f "$STAMP" && "$(cat "$STAMP")" == "$(expected_stamp)" ]]
+  [[ -x "$VENV/bin/python" && -f "$STAMP" && "$(cat "$STAMP")" == "$(expected_stamp)" ]] \
+    && [[ -z "$(find "$PLUGIN_ROOT/src" -newer "$STAMP" -print -quit)" ]]
 }
 
 install_uv() {
@@ -40,7 +41,7 @@ install_environment() {
   UV_PROJECT_ENVIRONMENT="$VENV" \
     UV_PYTHON_INSTALL_DIR="$SPEAK_HOME/python" \
     UV_CACHE_DIR="$SPEAK_HOME/uv-cache" \
-    "$UV" sync --project "$PLUGIN_ROOT" --frozen --no-dev --no-editable --managed-python --python 3.12 --quiet
+    "$UV" sync --project "$PLUGIN_ROOT" --frozen --no-dev --no-editable --managed-python --python 3.12 --reinstall-package speak --quiet
   expected_stamp >"$STAMP"
 }
 
