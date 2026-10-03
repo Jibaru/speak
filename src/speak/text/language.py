@@ -4,6 +4,7 @@ from collections.abc import Sequence
 SUPPORTED = ("en", "es", "fr", "it", "pt")
 FALLBACK = "en"
 MIN_WORDS_TO_DETECT = 4
+MIN_CONFIDENT_SCORE = 2
 
 FUNCTION_WORDS = {
     "en": {
@@ -41,19 +42,27 @@ def words(text: str) -> list[str]:
 
 
 def detect(text: str, prefer: str | None = None) -> str | None:
+    best, leaders = _leaders(text)
+    if best == 0:
+        return None
+    if prefer in leaders:
+        return prefer
+    return leaders[0]
+
+
+def detect_confidently(text: str) -> str | None:
+    best, leaders = _leaders(text)
+    return leaders[0] if best >= MIN_CONFIDENT_SCORE and len(leaders) == 1 else None
+
+
+def _leaders(text: str) -> tuple[int, list[str]]:
     tokens = words(text)
     scores = {lang: sum(token in FUNCTION_WORDS[lang] for token in tokens) for lang in SUPPORTED}
     lowered = text.lower()
     for lang, characters in DISTINCTIVE_CHARACTERS.items():
         scores[lang] += 2 * sum(lowered.count(character) for character in characters)
-
     best = max(scores.values())
-    if best == 0:
-        return None
-    leaders = [lang for lang, score in scores.items() if score == best]
-    if prefer in leaders:
-        return prefer
-    return leaders[0]
+    return best, [lang for lang, score in scores.items() if score == best]
 
 
 def assign_languages(sentences: Sequence[str], default: str = FALLBACK) -> list[str]:
@@ -61,7 +70,10 @@ def assign_languages(sentences: Sequence[str], default: str = FALLBACK) -> list[
     assigned: list[str] = []
     previous = dominant
     for sentence in sentences:
-        detected = detect(sentence, prefer=previous) if len(words(sentence)) >= MIN_WORDS_TO_DETECT else None
+        if len(words(sentence)) >= MIN_WORDS_TO_DETECT:
+            detected = detect(sentence, prefer=previous)
+        else:
+            detected = detect_confidently(sentence)
         previous = detected or previous
         assigned.append(previous)
     return assigned

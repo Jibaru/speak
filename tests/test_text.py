@@ -28,6 +28,10 @@ def test_short_sentences_inherit_previous_language():
     assert language.assign_languages(sentences) == ["es", "es", "en"]
 
 
+def test_short_sentences_with_clear_signal_are_detected():
+    assert language.assign_languages(["Listo, ya está.", "All the tests are green now."]) == ["es", "en"]
+
+
 def test_code_blocks_and_tables_become_placeholders():
     markdown = "Listo, ya está el cambio.\n\n```ts\nconst a = 1;\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
     blocks, lang = to_blocks(markdown)
