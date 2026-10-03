@@ -56,3 +56,22 @@ def test_manager_without_any_engine_raises_after_load_fails():
     manager._load(Settings())
     with pytest.raises(RuntimeError):
         manager.synthesize("hola", "es", Settings())
+
+
+def test_resample_preserves_duration():
+    from speak.engines.base import resample
+
+    audio = np.sin(np.linspace(0, 100, 22050)).astype(np.float32)
+    resampled = resample(audio, 22050, 24000)
+    assert resampled.size == 24000
+    assert resampled.dtype == np.float32
+
+
+def test_sapi_script_embeds_culture_rate_and_escaped_path(tmp_path):
+    from speak.engines.sapi import build_script
+
+    script = build_script("es", 1.15, tmp_path / "it's.wav")
+    assert "[Globalization.CultureInfo]'es-MX'" in script
+    assert "$synth.Rate = 1" in script
+    assert "it''s.wav" in script
+    assert "catch {}" in script

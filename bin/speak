@@ -4,30 +4,73 @@ set -euo pipefail
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPEAK_HOME="${SPEAK_HOME:-$HOME/.cache/speak}"
 UV_VERSION="0.12.22"
-UV="$SPEAK_HOME/bin/uv"
 VENV="$SPEAK_HOME/venv"
 STAMP="$VENV/.speak-stamp"
 INSTALL_LOCK="$SPEAK_HOME/install.lock"
 INSTALL_LOG="$SPEAK_HOME/install.log"
 
+case "$(uname -s)" in
+  Darwin) OS=macos ;;
+  Linux) OS=linux ;;
+  MINGW* | MSYS* | CYGWIN*) OS=windows ;;
+  *) echo "speak: unsupported platform $(uname -s)" >&2 && exit 1 ;;
+esac
+case "$(uname -m)" in
+  arm64 | aarch64) ARCH=aarch64 ;;
+  *) ARCH=x86_64 ;;
+esac
+
+if [[ "$OS" == windows ]]; then
+  UV="$SPEAK_HOME/bin/uv.exe"
+  PYTHON="$VENV/Scripts/python.exe"
+  NATIVE_ROOT="$(cygpath -w "$PLUGIN_ROOT")"
+else
+  UV="$SPEAK_HOME/bin/uv"
+  PYTHON="$VENV/bin/python"
+  NATIVE_ROOT="$PLUGIN_ROOT"
+fi
+
 export SPEAK_HOME
-export SPEAK_PLUGIN_ROOT="$PLUGIN_ROOT"
+export SPEAK_PLUGIN_ROOT="$NATIVE_ROOT"
 
 expected_stamp() {
-  printf '%s %s\n' "$PLUGIN_ROOT" "$(shasum "$PLUGIN_ROOT/uv.lock" | cut -d' ' -f1)"
+  printf '%s|%s\n' "$NATIVE_ROOT" "$(wc -c <"$PLUGIN_ROOT/uv.lock" | tr -d ' ')"
 }
 
 is_ready() {
-  [[ -x "$VENV/bin/python" && -f "$STAMP" && "$(cat "$STAMP")" == "$(expected_stamp)" ]] \
+  [[ -x "$PYTHON" && -f "$STAMP" && "$(cat "$STAMP")" == "$(expected_stamp)" ]] \
     && [[ -z "$(find "$PLUGIN_ROOT/src" -newer "$STAMP" -print -quit)" ]]
 }
 
 install_uv() {
   [[ -x "$UV" ]] && return
   mkdir -p "$SPEAK_HOME/bin"
-  local archive="uv-aarch64-apple-darwin.tar.gz"
-  curl -fsSL "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$archive" \
-    | tar -xz -C "$SPEAK_HOME/bin" --strip-components=1
+  local base="https://github.com/astral-sh/uv/releases/download/$UV_VERSION"
+  case "$OS" in
+    macos) curl -fsSL "$base/uv-$ARCH-apple-darwin.tar.gz" | tar -xz -C "$SPEAK_HOME/bin" --strip-components=1 ;;
+    linux) curl -fsSL "$base/uv-$ARCH-unknown-linux-gnu.tar.gz" | tar -xz -C "$SPEAK_HOME/bin" --strip-components=1 ;;
+    windows)
+      local archive="$SPEAK_HOME/uv.zip"
+      curl -fsSL "$base/uv-$ARCH-pc-windows-msvc.zip" -o "$archive"
+      powershell.exe -NoProfile -Command "Expand-Archive -Force '$(cygpath -w "$archive")' '$(cygpath -w "$SPEAK_HOME/bin")'"
+      rm -f "$archive"
+      ;;
+  esac
+}
+
+sync_environment() {
+  UV_PROJECT_ENVIRONMENT="$VENV" \
+    UV_PYTHON_INSTALL_DIR="$SPEAK_HOME/python" \
+    UV_CACHE_DIR="$SPEAK_HOME/uv-cache" \
+    UV_HTTP_TIMEOUT=300 \
+    "$UV" sync --project "$NATIVE_ROOT" --frozen --no-dev --no-editable --managed-python --python 3.12 \
+    --reinstall-package speak --quiet
+}
+
+release_stale_lock() {
+  if [[ -d "$INSTALL_LOCK" && -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +20)" ]]; then
+    rmdir "$INSTALL_LOCK"
+  fi
 }
 
 install_environment() (
@@ -43,18 +86,12 @@ install_environment() (
   expected_stamp >"$STAMP"
 )
 
-sync_environment() {
-  UV_PROJECT_ENVIRONMENT="$VENV" \
-    UV_PYTHON_INSTALL_DIR="$SPEAK_HOME/python" \
-    UV_CACHE_DIR="$SPEAK_HOME/uv-cache" \
-    UV_HTTP_TIMEOUT=300 \
-    "$UV" sync --project "$PLUGIN_ROOT" --frozen --no-dev --no-editable --managed-python --python 3.12 --reinstall-package speak --quiet
-}
-
-release_stale_lock() {
-  if [[ -d "$INSTALL_LOCK" && -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +20)" ]]; then
-    rmdir "$INSTALL_LOCK"
-  fi
+announce_install() {
+  local message="Installing the speak voice engine. Voice will be ready in a minute."
+  case "$OS" in
+    macos) say "$message" & ;;
+    windows) powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('$message')" & ;;
+  esac
 }
 
 install_in_background() {
@@ -62,12 +99,12 @@ install_in_background() {
   [[ -d "$INSTALL_LOCK" ]] && return
   mkdir -p "$SPEAK_HOME"
   nohup "$0" install >>"$INSTALL_LOG" 2>&1 &
-  say "Installing the speak voice engine. Voice will be ready in a minute." &
+  announce_install
 }
 
 if [[ "${1:-}" == "install" ]]; then
   install_environment
-  exec "$VENV/bin/python" -m speak setup
+  exec "$PYTHON" -m speak setup
 fi
 
 if ! is_ready; then
@@ -79,4 +116,4 @@ if ! is_ready; then
   install_environment
 fi
 
-exec "$VENV/bin/python" -m speak "$@"
+exec "$PYTHON" -m speak "$@"

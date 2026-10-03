@@ -25,3 +25,12 @@ def flatten(audio) -> np.ndarray:
 
 def concatenate(chunks: list[np.ndarray]) -> np.ndarray:
     return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+
+
+def resample(audio: np.ndarray, source_rate: int, target_rate: int = SAMPLE_RATE) -> np.ndarray:
+    if source_rate == target_rate or audio.size == 0:
+        return audio.astype(np.float32, copy=False)
+    duration = audio.size / source_rate
+    target_times = np.arange(round(duration * target_rate)) / target_rate
+    source_times = np.arange(audio.size) / source_rate
+    return np.interp(target_times, source_times, audio).astype(np.float32)

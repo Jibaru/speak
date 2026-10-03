@@ -39,6 +39,10 @@ def create_fallback() -> Engine | None:
         from speak.engines.say import SayEngine
 
         return SayEngine()
+    if sys.platform == "win32":
+        from speak.engines.sapi import SapiEngine
+
+        return SapiEngine()
     return None
 
 
