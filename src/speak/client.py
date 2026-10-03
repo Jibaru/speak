@@ -3,6 +3,7 @@ import socket
 import time
 from dataclasses import dataclass
 
+from speak import __version__
 from speak.paths import Paths
 from speak.system.process import background_python, spawn_detached
 
@@ -16,12 +17,13 @@ MAX_LOG_BYTES = 1_000_000
 class Endpoint:
     port: int
     token: str
+    version: str
 
     @classmethod
     def read(cls, paths: Paths) -> "Endpoint | None":
         try:
             data = json.loads(paths.endpoint.read_text())
-            return cls(int(data["port"]), str(data["token"]))
+            return cls(int(data["port"]), str(data["token"]), str(data.get("version", "")))
         except (OSError, ValueError, KeyError):
             return None
 
@@ -34,6 +36,19 @@ class DaemonClient:
         endpoint = Endpoint.read(self._paths)
         if endpoint is None:
             return None
+        if endpoint.version != __version__:
+            self._retire(endpoint, timeout)
+            return None
+        return self._exchange(endpoint, message, timeout)
+
+    def _retire(self, endpoint: Endpoint, timeout: float) -> None:
+        """A daemon from another plugin version is asked to exit so a current one can start."""
+        self._exchange(endpoint, {"op": "shutdown"}, timeout)
+        deadline = time.monotonic() + STARTUP_WAIT_SECONDS
+        while self._paths.endpoint.exists() and time.monotonic() < deadline:
+            time.sleep(STARTUP_POLL_SECONDS)
+
+    def _exchange(self, endpoint: Endpoint, message: dict, timeout: float) -> dict | None:
         try:
             with socket.create_connection(("127.0.0.1", endpoint.port), timeout=timeout) as connection:
                 connection.sendall(json.dumps({**message, "token": endpoint.token}).encode() + b"\n")

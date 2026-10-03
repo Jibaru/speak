@@ -12,6 +12,7 @@ from typing import Protocol
 
 import numpy as np
 
+from speak import __version__
 from speak.daemon.narrator import Narrator
 from speak.daemon.player import Player
 from speak.daemon.speaker import Speaker
@@ -94,7 +95,7 @@ class Daemon:
         loop = asyncio.get_running_loop()
         server = await asyncio.start_server(self._serve_client, host="127.0.0.1", port=0)
         port = server.sockets[0].getsockname()[1]
-        write_private(self._paths.endpoint, json.dumps({"port": port, "token": self._token, "pid": os.getpid()}))
+        write_private(self._paths.endpoint, json.dumps({"port": port, "token": self._token, "pid": os.getpid(), "version": __version__}))
         self._speaker.start()
         loop.run_in_executor(None, self._player.prepare)
         self._engines.load_in_background(self._settings)
@@ -166,6 +167,7 @@ class Daemon:
         return {
             "ok": True,
             "pid": os.getpid(),
+            "version": __version__,
             "engine": self._engines.current.name if self._engines.current else "loading",
             "speaking": not self._speaker.is_idle(),
             "projects": sorted(self._active_projects()),

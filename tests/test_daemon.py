@@ -154,3 +154,10 @@ async def test_requests_without_the_token_are_rejected(paths, running):
             return json.loads(connection.recv(4096))
 
     assert await asyncio.to_thread(raw_request) == {"ok": False, "error": "unauthorized"}
+
+
+async def test_daemon_from_another_version_is_retired(paths, running):
+    endpoint = json.loads(paths.endpoint.read_text())
+    paths.endpoint.write_text(json.dumps({**endpoint, "version": "0.0.0-old"}))
+    assert await request(paths, {"op": "ping"}) is None
+    await wait_for(lambda: not paths.endpoint.exists())

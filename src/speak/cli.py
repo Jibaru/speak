@@ -48,6 +48,9 @@ def _parser() -> argparse.ArgumentParser:
     command.add_argument("--session")
     command.set_defaults(run=_run_command)
 
+    doctor = commands.add_parser("doctor", help="check that every part of speak works on this machine")
+    doctor.set_defaults(run=_run_doctor)
+
     setup = commands.add_parser("setup", help="download and warm up the voice model")
     setup.set_defaults(run=_run_setup)
     return parser
@@ -106,6 +109,17 @@ def _run_setup(_args, paths: Paths) -> None:
     engine.load()
     engine.warm(settings)
     print("speak: ready")
+
+
+def _run_doctor(_args, paths: Paths) -> int:
+    from speak.doctor import Doctor
+
+    def report(check) -> None:
+        print(f"{'✓' if check.ok else '✗'} {check.name:<11} {check.detail}", flush=True)
+
+    healthy = Doctor(paths).run(report)
+    print("speak is healthy" if healthy else "speak has problems, see above")
+    return 0 if healthy else 1
 
 
 def _print(response: dict | None) -> None:
