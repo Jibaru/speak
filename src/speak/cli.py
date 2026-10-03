@@ -115,7 +115,8 @@ def _run_doctor(_args, paths: Paths) -> int:
     from speak.doctor import Doctor
 
     def report(check) -> None:
-        print(f"{'✓' if check.ok else '✗'} {check.name:<11} {check.detail}", flush=True)
+        mark = "✓" if check.ok else ("!" if check.optional else "✗")
+        print(f"{mark} {check.name:<11} {check.detail}", flush=True)
 
     healthy = Doctor(paths).run(report)
     print("speak is healthy" if healthy else "speak has problems, see above")

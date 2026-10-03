@@ -19,6 +19,7 @@ class Check:
     name: str
     ok: bool
     detail: str
+    optional: bool = False
 
 
 class Doctor:
@@ -37,7 +38,7 @@ class Doctor:
                 result = Check(check.__name__.strip("_"), False, f"{type(error).__name__}: {error}")
             report(result)
             results.append(result)
-        return all(result.ok for result in results)
+        return all(result.ok or result.optional for result in results)
 
     def _platform(self) -> Check:
         detail = f"{platform.system()} {platform.release()} {platform.machine()}, Python {platform.python_version()}"
@@ -88,11 +89,12 @@ class Doctor:
         settings = self._store.load()
         if sys.platform == "darwin":
             exists = self._paths.helper_binary.exists()
-            return Check("hotkey", exists, f"{settings.hotkey} via {self._paths.helper_binary}")
+            return Check("hotkey", exists, f"{settings.hotkey} via {self._paths.helper_binary}", optional=True)
         if sys.platform == "win32":
-            return Check("hotkey", True, f"{settings.hotkey} via RegisterHotKey (see daemon log for registration)")
+            return Check("hotkey", True, f"{settings.hotkey} via RegisterHotKey (see daemon log for registration)", optional=True)
         has_x11 = "DISPLAY" in os.environ
-        return Check("hotkey", has_x11, f"{settings.hotkey} via X11" if has_x11 else "no X11: bind `speak stop` to a shortcut")
+        detail = f"{settings.hotkey} via X11" if has_x11 else "no X11: bind `speak stop` to a shortcut"
+        return Check("hotkey", has_x11, detail, optional=True)
 
     def _microphone(self) -> Check:
         settings = self._store.load()
@@ -101,7 +103,8 @@ class Doctor:
         if sys.platform == "win32":
             from speak.interrupts.windows import microphone_in_use
 
-            return Check("microphone", True, f"consent registry readable, in use now: {microphone_in_use()}")
+            return Check("microphone", True, f"consent registry readable, in use now: {microphone_in_use()}", optional=True)
         if sys.platform == "linux":
-            return Check("microphone", bool(shutil.which("pactl")), "pactl" if shutil.which("pactl") else "pactl not found")
-        return Check("microphone", self._paths.helper_binary.exists(), "CoreAudio via native helper")
+            pactl = shutil.which("pactl")
+            return Check("microphone", bool(pactl), "pactl" if pactl else "pactl not found", optional=True)
+        return Check("microphone", self._paths.helper_binary.exists(), "CoreAudio via native helper", optional=True)

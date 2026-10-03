@@ -1,9 +1,17 @@
 {
   "name": "speak",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local, low-latency voice output for Claude Code. Claude reads its replies aloud with an on-device TTS engine.",
-  "author": { "name": "Jibaru" },
+  "author": {
+    "name": "Jibaru"
+  },
   "repository": "https://github.com/Jibaru/speak",
   "license": "MIT",
-  "keywords": ["voice", "tts", "speech", "accessibility", "kokoro"]
+  "keywords": [
+    "voice",
+    "tts",
+    "speech",
+    "accessibility",
+    "kokoro"
+  ]
 }
