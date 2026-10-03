@@ -5,7 +5,8 @@ description = "Local, low-latency voice output for Claude Code"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "mlx-audio>=0.2",
+    "mlx-audio>=0.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "kokoro-onnx>=0.4",
     "misaki>=0.9",
     "num2words>=0.5",
     "spacy>=3.8",

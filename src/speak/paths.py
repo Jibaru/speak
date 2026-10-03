@@ -41,6 +41,10 @@ class Paths:
         return self.home / "sessions"
 
     @property
+    def models(self) -> Path:
+        return self.home / "models"
+
+    @property
     def huggingface(self) -> Path:
         return self.home / "hf"
 
