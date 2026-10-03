@@ -78,7 +78,7 @@ def test_stop_speaks_last_message_in_brief_mode(handler, client):
 def test_stop_in_narrate_mode_finishes_watch(handler, client, store):
     store.set_session_level("s1", Level.NARRATE)
     handler.handle("Stop", {**PAYLOAD, "last_assistant_message": "Listo."})
-    assert client.sent == [{"op": "finish", "session": "s1", "project": "myproject"}]
+    assert client.sent == [{"op": "finish", "text": "Listo.", "session": "s1", "project": "myproject"}]
 
 
 def test_stop_with_voice_off_is_silent(handler, client, store):

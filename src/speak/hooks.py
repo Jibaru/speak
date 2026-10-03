@@ -64,7 +64,8 @@ class HookHandler:
         if level is Level.OFF:
             return
         if level is Level.NARRATE:
-            self._client.send(self._identify(payload, {"op": "finish"}), start_daemon=True)
+            message = {"op": "finish", "text": payload.get("last_assistant_message") or ""}
+            self._client.send(self._identify(payload, message), start_daemon=True)
             return
         text = payload.get("last_assistant_message") or ""
         if text.strip():

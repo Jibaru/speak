@@ -21,6 +21,7 @@ class TranscriptFollower:
     def __init__(self, path: Path, offset: int | None = None):
         self._path = path
         self._offset = offset if offset is not None else _size(path)
+        self.spoken: set[str] = set()
 
     def read_new_texts(self) -> list[str]:
         return self.read_update().texts
@@ -88,10 +89,13 @@ class Narrator:
         if self._task is None or self._task.done():
             self._task = asyncio.get_running_loop().create_task(self._poll_forever())
 
-    def finish(self, session: str) -> None:
+    def finish(self, session: str, final_text: str = "") -> None:
         follower = self._followers.pop(session, None)
-        if follower:
-            self._emit(session, follower)
+        if follower is None:
+            return
+        self._emit(session, follower)
+        if final_text.strip() and final_text.strip() not in follower.spoken:
+            self._on_text(session, final_text)
 
     def unwatch(self, session: str) -> None:
         self._followers.pop(session, None)
@@ -113,4 +117,5 @@ class Narrator:
             self._on_interrupt(session)
             return
         for text in update.texts:
+            follower.spoken.add(text.strip())
             self._on_text(session, text)

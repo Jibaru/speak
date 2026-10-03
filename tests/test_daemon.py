@@ -125,3 +125,19 @@ async def test_interrupt_in_transcript_stops_narration(paths, running, tmp_path)
     await wait_for(lambda: player.cleared > cleared_before)
     status = await request(paths, {"op": "status"})
     assert status["speaking"] is False
+
+
+async def test_finish_speaks_final_text_not_yet_in_transcript(paths, running, tmp_path):
+    _, engine, _ = running
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("")
+    await request(paths, {"op": "watch", "session": "s", "transcript": str(transcript)})
+    with transcript.open("a") as file:
+        file.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Let me look."}]}}) + "\n")
+    await wait_for(lambda: engine.spoken)
+    await request(paths, {"op": "finish", "session": "s", "text": "Let me look."})
+    await request(paths, {"op": "watch", "session": "s", "transcript": str(transcript)})
+    await request(paths, {"op": "finish", "session": "s", "text": "It prints hello."})
+    await wait_for(lambda: len(engine.spoken) == 2)
+    await asyncio.sleep(0.1)
+    assert [text for text, _ in engine.spoken] == ["Let me look.", "It prints hello."]

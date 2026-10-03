@@ -141,7 +141,7 @@ class Daemon:
         self._narrator.watch(message["session"], Path(message["transcript"]), message.get("offset"))
 
     def _op_finish(self, message: dict) -> None:
-        self._narrator.finish(message["session"])
+        self._narrator.finish(message["session"], message.get("text", ""))
 
     def _op_unwatch(self, message: dict) -> None:
         self._narrator.unwatch(message["session"])
