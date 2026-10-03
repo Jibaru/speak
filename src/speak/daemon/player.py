@@ -14,6 +14,8 @@ class Player(Protocol):
 
     def clear(self) -> None: ...
 
+    def prepare(self) -> None: ...
+
     def is_idle(self) -> bool: ...
 
     def idle_seconds(self) -> float: ...
@@ -38,6 +40,7 @@ class StreamPlayer:
         self._close_after_idle_seconds = close_after_idle_seconds
         self._chunks: deque[_Chunk] = deque()
         self._lock = threading.Lock()
+        self._stream_lock = threading.Lock()
         self._stream = None
         self._last_audio_at = time.monotonic()
         self._latencies: deque[float] = deque(maxlen=64)
@@ -53,6 +56,10 @@ class StreamPlayer:
     def clear(self) -> None:
         with self._lock:
             self._chunks.clear()
+
+    def prepare(self) -> None:
+        self._last_audio_at = time.monotonic()
+        self._ensure_stream()
 
     def is_idle(self) -> bool:
         with self._lock:
@@ -72,25 +79,28 @@ class StreamPlayer:
             self.close()
 
     def close(self) -> None:
-        stream, self._stream = self._stream, None
+        with self._stream_lock:
+            stream, self._stream = self._stream, None
         if stream is not None:
             stream.abort()
             stream.close()
 
     def _ensure_stream(self) -> None:
-        if self._stream is not None:
-            return
-        import sounddevice
+        with self._stream_lock:
+            if self._stream is not None:
+                return
+            import sounddevice
 
-        self._stream = sounddevice.OutputStream(
-            samplerate=self._sample_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=BLOCK_SIZE,
-            latency="low",
-            callback=self._fill,
-        )
-        self._stream.start()
+            stream = sounddevice.OutputStream(
+                samplerate=self._sample_rate,
+                channels=1,
+                dtype="float32",
+                blocksize=BLOCK_SIZE,
+                latency="low",
+                callback=self._fill,
+            )
+            stream.start()
+            self._stream = stream
 
     def _fill(self, output, frames, _time, _status) -> None:
         output.fill(0)

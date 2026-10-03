@@ -57,6 +57,9 @@ class FakePlayer:
     def clear(self):
         self.cleared += 1
 
+    def prepare(self):
+        self.prepared = True
+
     def is_idle(self):
         return True
 

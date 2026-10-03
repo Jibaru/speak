@@ -89,6 +89,7 @@ class Daemon:
         server = await asyncio.start_unix_server(self._serve_client, path=str(self._paths.socket))
         os.chmod(self._paths.socket, 0o600)
         self._speaker.start()
+        asyncio.get_running_loop().run_in_executor(None, self._player.prepare)
         self._engines.load_in_background(self._settings)
         if self._sidecar:
             self._sidecar.start(self._settings)
@@ -121,6 +122,9 @@ class Daemon:
 
     def _op_ping(self, _message: dict) -> None:
         return None
+
+    def _op_prepare(self, _message: dict) -> None:
+        asyncio.get_running_loop().run_in_executor(None, self._player.prepare)
 
     def _op_speak(self, message: dict) -> dict:
         self._settings = self._store.load()

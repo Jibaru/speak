@@ -54,8 +54,9 @@ class HookHandler:
             return None
         if level is Level.NARRATE:
             self._client.send(self._watch_message(payload), start_daemon=True)
+            self._client.request({"op": "prepare"})
         else:
-            self._client.send(self._identify(payload, {"op": "ping"}), start_daemon=True)
+            self._client.send(self._identify(payload, {"op": "prepare"}), start_daemon=True)
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": INSTRUCTIONS[level]}}
 
     def _stop(self, payload: dict) -> None:
