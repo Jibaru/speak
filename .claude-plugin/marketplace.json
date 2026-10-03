@@ -1,6 +1,9 @@
 {
   "name": "jibaru",
-  "owner": { "name": "Jibaru" },
+  "description": "Jibaru's Claude Code plugins",
+  "owner": {
+    "name": "Jibaru"
+  },
   "plugins": [
     {
       "name": "speak",
