@@ -81,8 +81,8 @@ def test_lexicon_replaces_whole_words_case_insensitively(tmp_path):
     user_file = tmp_path / "lexicon.json"
     user_file.write_text(json.dumps({"es": {"Kokoro": "cocoro"}}))
     lexicon = Lexicon.load(user_file)
-    assert lexicon.apply("El Hook de Claude Code usa Kokoro y hookah", "es") == "El juk de clod cod usa cocoro y hookah"
-    assert lexicon.apply("The hook works", "en") == "The hook works"
+    assert lexicon.apply("La API de Kokoro devuelve JSON y apis", "es") == "La a pe i de cocoro devuelve yéison y a pe is"
+    assert lexicon.apply("The API works", "en") == "The API works"
 
 
 def test_prepare_brief_reads_only_first_prose_paragraph():
@@ -98,7 +98,7 @@ def test_prepare_full_switches_language_per_sentence():
     preparer = SpeechPreparer(Lexicon.load())
     segments = preparer.prepare("Ya corrí el deploy del proyecto. The error message says that the file is missing.")
     assert segments == [
-        Segment("Ya corrí el diplói del proyecto.", "es"),
+        Segment("Ya corrí el deploy del proyecto.", "es"),
         Segment("The error message says that the file is missing.", "en"),
     ]
 

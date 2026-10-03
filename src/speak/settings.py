@@ -20,6 +20,7 @@ DEFAULT_SAY_VOICES = {"en": "Samantha", "es": "Paulina", "fr": "Thomas", "it": "
 @dataclass
 class Settings:
     level: Level = Level.BRIEF
+    engine: str = "auto"
     rate: float = 1.15
     voices: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_VOICES))
     say_voices: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_SAY_VOICES))
@@ -32,6 +33,7 @@ class Settings:
         defaults = cls()
         return cls(
             level=Level(data.get("level", defaults.level)),
+            engine=str(data.get("engine", defaults.engine)),
             rate=float(data.get("rate", defaults.rate)),
             voices={**defaults.voices, **data.get("voices", {})},
             say_voices={**defaults.say_voices, **data.get("say_voices", {})},

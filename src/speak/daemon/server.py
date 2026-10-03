@@ -150,7 +150,7 @@ class Daemon:
         return {
             "ok": True,
             "pid": os.getpid(),
-            "engine": self._engines.current.name,
+            "engine": self._engines.current.name if self._engines.current else "loading",
             "speaking": not self._speaker.is_idle(),
             "projects": sorted(self._active_projects()),
             "last_latency_ms": self._last_latency_ms,

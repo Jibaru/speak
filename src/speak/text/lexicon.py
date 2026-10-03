@@ -3,72 +3,24 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
-SPANISH_TECH_TERMS = {
-    "Claude Code": "clod cod",
-    "Claude": "clod",
-    "pull request": "pul request",
-    "pull requests": "pul requests",
-    "TypeScript": "táip escript",
-    "JavaScript": "yava escript",
-    "Next.js": "next yei es",
-    "Node.js": "noud yei es",
-    "useEffect": "ius ifect",
-    "useState": "ius steit",
-    "GitHub": "guit jab",
-    "README": "ridmi",
-    "hook": "juk",
-    "hooks": "juks",
-    "deploy": "diplói",
-    "deploys": "diplóis",
-    "staging": "stéiying",
-    "endpoint": "éndpoint",
-    "endpoints": "éndpoints",
-    "bug": "bag",
-    "bugs": "bags",
-    "debug": "dibág",
-    "commit": "cómit",
-    "commits": "cómits",
-    "merge": "merch",
-    "feature": "fícher",
-    "features": "fíchers",
-    "frontend": "frontend",
-    "backend": "bákend",
-    "build": "bild",
-    "script": "escript",
-    "scripts": "escripts",
-    "plugin": "pláguin",
-    "plugins": "pláguins",
-    "daemon": "dímon",
-    "token": "tóken",
-    "tokens": "tókens",
-    "workflow": "uórkflou",
-    "workflows": "uórkflous",
-    "issue": "íshu",
-    "issues": "íshus",
-    "cache": "cach",
-    "React": "riáct",
-    "hotkey": "jótqui",
-    "listener": "lísener",
-    "update": "ápdeit",
-    "upload": "áploud",
-    "download": "dáunloud",
-    "framework": "fréimuork",
-    "query": "cuéri",
-    "queries": "cuéris",
-    "string": "estrin",
-    "JSON": "yéison",
+SPANISH_TERMS = {
     "API": "a pe i",
     "APIs": "a pe is",
     "CLI": "ce ele i",
     "URL": "u erre ele",
+    "URLs": "u erre eles",
+    "JSON": "yéison",
+    "README": "ridmi",
     "TTS": "te te ese",
     "MLX": "eme ele equis",
     "macOS": "mac o ese",
     "npm": "ene pe eme",
     "OK": "okey",
+    "Next.js": "next yei es",
+    "Node.js": "noud yei es",
 }
 
-DEFAULTS: Mapping[str, Mapping[str, str]] = {"es": SPANISH_TECH_TERMS}
+DEFAULTS: Mapping[str, Mapping[str, str]] = {"es": SPANISH_TERMS}
 
 
 class Lexicon:
@@ -81,7 +33,8 @@ class Lexicon:
         merged = {lang: dict(terms) for lang, terms in DEFAULTS.items()}
         if user_file and user_file.exists():
             for lang, terms in json.loads(user_file.read_text()).items():
-                merged.setdefault(lang, {}).update(terms)
+                if isinstance(terms, dict):
+                    merged.setdefault(lang, {}).update(terms)
         return cls(merged)
 
     def apply(self, text: str, lang: str) -> str:

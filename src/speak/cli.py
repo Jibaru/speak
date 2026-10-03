@@ -53,13 +53,17 @@ def _parser() -> argparse.ArgumentParser:
 def _run_daemon(_args, paths: Paths) -> None:
     import asyncio
 
-    from speak.daemon.engines import SAMPLE_RATE, EngineManager
     from speak.daemon.helper import Helper
     from speak.daemon.player import StreamPlayer
     from speak.daemon.server import Daemon
+    from speak.engines import registry
+    from speak.engines.base import SAMPLE_RATE
+    from speak.engines.manager import EngineManager
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    daemon = Daemon(paths, EngineManager(paths), StreamPlayer(SAMPLE_RATE), Helper(paths))
+    engine_name = registry.resolve_engine_name(SettingsStore(paths).load())
+    engines = EngineManager(lambda: registry.create_primary(engine_name, paths), registry.create_fallback())
+    daemon = Daemon(paths, engines, StreamPlayer(SAMPLE_RATE), Helper(paths))
     asyncio.run(daemon.run())
 
 
@@ -90,12 +94,14 @@ def _run_command(args, paths: Paths) -> None:
 
 
 def _run_setup(_args, paths: Paths) -> None:
-    from speak.daemon.engines import KokoroEngine
+    from speak.engines import registry
 
-    print("speak: downloading and warming up the voice model...", flush=True)
-    engine = KokoroEngine(paths)
+    settings = SettingsStore(paths).load()
+    engine_name = registry.resolve_engine_name(settings)
+    print(f"speak: downloading and warming up {engine_name}...", flush=True)
+    engine = registry.create_primary(engine_name, paths)
     engine.load()
-    engine.warm(SettingsStore(paths).load())
+    engine.warm(settings)
     print("speak: ready")
 
 
