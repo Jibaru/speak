@@ -1,0 +1,11 @@
+{
+  "name": "jibaru",
+  "owner": { "name": "Jibaru" },
+  "plugins": [
+    {
+      "name": "speak",
+      "source": "./",
+      "description": "Local, low-latency voice output for Claude Code."
+    }
+  ]
+}

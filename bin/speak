@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SPEAK_HOME="${SPEAK_HOME:-$HOME/.cache/speak}"
+UV_VERSION="0.12.22"
+UV="$SPEAK_HOME/bin/uv"
+VENV="$SPEAK_HOME/venv"
+STAMP="$VENV/.speak-stamp"
+INSTALL_LOCK="$SPEAK_HOME/install.lock"
+INSTALL_LOG="$SPEAK_HOME/install.log"
+
+export SPEAK_HOME
+export SPEAK_PLUGIN_ROOT="$PLUGIN_ROOT"
+
+expected_stamp() {
+  printf '%s %s\n' "$PLUGIN_ROOT" "$(shasum "$PLUGIN_ROOT/uv.lock" | cut -d' ' -f1)"
+}
+
+is_ready() {
+  [[ -x "$VENV/bin/python" && -f "$STAMP" && "$(cat "$STAMP")" == "$(expected_stamp)" ]]
+}
+
+install_uv() {
+  [[ -x "$UV" ]] && return
+  mkdir -p "$SPEAK_HOME/bin"
+  local archive="uv-aarch64-apple-darwin.tar.gz"
+  curl -fsSL "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$archive" \
+    | tar -xz -C "$SPEAK_HOME/bin" --strip-components=1
+}
+
+install_environment() {
+  mkdir -p "$SPEAK_HOME"
+  if ! mkdir "$INSTALL_LOCK" 2>/dev/null; then
+    echo "speak: installation already in progress" >&2
+    return 1
+  fi
+  trap 'rmdir "$INSTALL_LOCK" 2>/dev/null || true' RETURN
+  install_uv
+  UV_PROJECT_ENVIRONMENT="$VENV" \
+    UV_PYTHON_INSTALL_DIR="$SPEAK_HOME/python" \
+    UV_CACHE_DIR="$SPEAK_HOME/uv-cache" \
+    "$UV" sync --project "$PLUGIN_ROOT" --frozen --no-dev --no-editable --managed-python --python 3.12 --quiet
+  expected_stamp >"$STAMP"
+}
+
+install_in_background() {
+  [[ -d "$INSTALL_LOCK" ]] && return
+  mkdir -p "$SPEAK_HOME"
+  nohup "$0" install >>"$INSTALL_LOG" 2>&1 &
+  say "Installing the speak voice engine. Voice will be ready in a minute." &
+}
+
+if [[ "${1:-}" == "install" ]]; then
+  install_environment
+  exec "$VENV/bin/python" -m speak setup
+fi
+
+if ! is_ready; then
+  if [[ "${1:-}" == "hook" ]]; then
+    cat >/dev/null
+    install_in_background
+    exit 0
+  fi
+  install_environment
+fi
+
+exec "$VENV/bin/python" -m speak "$@"
