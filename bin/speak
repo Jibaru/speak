@@ -30,22 +30,35 @@ install_uv() {
     | tar -xz -C "$SPEAK_HOME/bin" --strip-components=1
 }
 
-install_environment() {
+install_environment() (
   mkdir -p "$SPEAK_HOME"
+  release_stale_lock
   if ! mkdir "$INSTALL_LOCK" 2>/dev/null; then
     echo "speak: installation already in progress" >&2
-    return 1
+    exit 1
   fi
-  trap 'rmdir "$INSTALL_LOCK" 2>/dev/null || true' RETURN
+  trap 'rmdir "$INSTALL_LOCK" 2>/dev/null || true' EXIT
   install_uv
+  sync_environment || sync_environment
+  expected_stamp >"$STAMP"
+)
+
+sync_environment() {
   UV_PROJECT_ENVIRONMENT="$VENV" \
     UV_PYTHON_INSTALL_DIR="$SPEAK_HOME/python" \
     UV_CACHE_DIR="$SPEAK_HOME/uv-cache" \
+    UV_HTTP_TIMEOUT=300 \
     "$UV" sync --project "$PLUGIN_ROOT" --frozen --no-dev --no-editable --managed-python --python 3.12 --reinstall-package speak --quiet
-  expected_stamp >"$STAMP"
+}
+
+release_stale_lock() {
+  if [[ -d "$INSTALL_LOCK" && -n "$(find "$INSTALL_LOCK" -maxdepth 0 -mmin +20)" ]]; then
+    rmdir "$INSTALL_LOCK"
+  fi
 }
 
 install_in_background() {
+  release_stale_lock
   [[ -d "$INSTALL_LOCK" ]] && return
   mkdir -p "$SPEAK_HOME"
   nohup "$0" install >>"$INSTALL_LOG" 2>&1 &
