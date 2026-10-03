@@ -143,3 +143,11 @@ def test_command_settings_persist(store, client):
     runner.run(["voice", "es", "em_alex"], "s1")
     settings = store.load()
     assert settings.rate == 1.3 and settings.voices["es"] == "em_alex" and settings.voices["en"] == "af_heart"
+
+
+def test_engine_command_persists_and_restarts_daemon(store, client):
+    runner = commands.CommandRunner(store, client)
+    assert runner.run(["engine", "kokoro-onnx"], "s1") == "speak: engine set to kokoro-onnx, it loads on the next reply"
+    assert store.load().engine == "kokoro-onnx"
+    assert {"op": "shutdown"} in client.requests
+    assert runner.run(["engine", "nope"], "s1").startswith("speak: engine must be one of")

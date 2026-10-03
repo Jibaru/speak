@@ -12,9 +12,11 @@ USAGE = """Usage:
   /speak default <level>         set the default level for new sessions
   /speak rate <0.5-2.0>          set the speaking rate
   /speak voice <lang> <voice>    set the Kokoro voice for a language (e.g. es ef_dora)
+  /speak engine <name>           auto, kokoro-mlx (Apple Silicon) or kokoro-onnx
   /speak stop                    stop speaking
   /speak test                    say a short sample"""
 
+ENGINES = ("auto", "kokoro-mlx", "kokoro-onnx")
 TEST_PHRASES = "Voice is working. La voz está funcionando."
 
 
@@ -41,6 +43,7 @@ class CommandRunner:
             "default": self._set_default_level,
             "rate": self._set_rate,
             "voice": self._set_voice,
+            "engine": self._set_engine,
             "stop": lambda _rest: self._stop(),
             "test": lambda _rest: self._test(session_id),
         }
@@ -88,6 +91,13 @@ class CommandRunner:
         voices = {**self._store.load().voices, lang: voice}
         self._store.update(voices=voices)
         return f"speak: {lang} voice set to {voice}"
+
+    def _set_engine(self, rest: list[str]) -> str:
+        if len(rest) != 1 or rest[0] not in ENGINES:
+            return f"speak: engine must be one of {', '.join(ENGINES)}"
+        self._store.update(engine=rest[0])
+        self._client.request({"op": "shutdown"})
+        return f"speak: engine set to {rest[0]}, it loads on the next reply"
 
     def _stop(self) -> str:
         self._client.request({"op": "stop", "source": "command"})
