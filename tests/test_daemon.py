@@ -21,7 +21,7 @@ async def wait_for(condition, timeout=2.0):
 async def running(paths, fake_engines, fake_player):
     daemon = Daemon(paths, fake_engines, fake_player)
     task = asyncio.create_task(daemon.run())
-    await wait_for(paths.socket.exists)
+    await wait_for(paths.endpoint.exists)
     yield daemon, fake_engines.engine, fake_player
     daemon.request_shutdown()
     await asyncio.wait_for(task, 2)
@@ -51,7 +51,7 @@ async def test_stop_clears_player_and_pending_segments(paths, fake_player):
     engines = FakeEngines(FakeEngine(delay=0.05))
     daemon = Daemon(paths, engines, fake_player)
     task = asyncio.create_task(daemon.run())
-    await wait_for(paths.socket.exists)
+    await wait_for(paths.endpoint.exists)
     text = " ".join(f"Sentence number {index} is here." for index in range(10))
     await request(paths, {"op": "speak", "text": text})
     await wait_for(lambda: engines.engine.spoken)
@@ -106,7 +106,7 @@ async def test_idle_daemon_shuts_down(paths, fake_engines, fake_player, monkeypa
     monkeypatch.setattr("speak.daemon.server.HOUSEKEEPING_SECONDS", 0.05)
     daemon = Daemon(paths, fake_engines, fake_player)
     await asyncio.wait_for(daemon.run(), 2)
-    assert not paths.socket.exists()
+    assert not paths.endpoint.exists()
     assert fake_player.closed
 
 
@@ -141,3 +141,16 @@ async def test_finish_speaks_final_text_not_yet_in_transcript(paths, running, tm
     await wait_for(lambda: len(engine.spoken) == 2)
     await asyncio.sleep(0.1)
     assert [text for text, _ in engine.spoken] == ["Let me look.", "It prints hello."]
+
+
+async def test_requests_without_the_token_are_rejected(paths, running):
+    import socket
+
+    port = json.loads(paths.endpoint.read_text())["port"]
+
+    def raw_request():
+        with socket.create_connection(("127.0.0.1", port), timeout=1) as connection:
+            connection.sendall(b'{"op": "status", "token": "wrong"}\n')
+            return json.loads(connection.recv(4096))
+
+    assert await asyncio.to_thread(raw_request) == {"ok": False, "error": "unauthorized"}

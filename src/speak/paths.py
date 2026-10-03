@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
+PROTOCOL_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -25,12 +26,12 @@ class Paths:
         return self.plugin_root / "bin" / "speak-helper"
 
     @property
-    def socket(self) -> Path:
-        return self.home / "daemon.sock"
+    def endpoint(self) -> Path:
+        return self.home / "daemon.json"
 
     @property
     def lock(self) -> Path:
-        return self.home / "daemon.lock"
+        return self.home / f"daemon.v{PROTOCOL_VERSION}.lock"
 
     @property
     def log(self) -> Path:

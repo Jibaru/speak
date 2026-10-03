@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from speak.interrupts.hotkey import default_hotkey
 from speak.paths import Paths
 
 
@@ -24,7 +25,7 @@ class Settings:
     rate: float = 1.15
     voices: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_VOICES))
     say_voices: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_SAY_VOICES))
-    hotkey: str = "option+escape"
+    hotkey: str = field(default_factory=default_hotkey)
     stop_on_mic: bool = True
     idle_minutes: int = 30
 

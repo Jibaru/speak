@@ -1,11 +1,10 @@
 import json
-import os
 import socket
-import subprocess
-import sys
 import time
+from dataclasses import dataclass
 
 from speak.paths import Paths
+from speak.system.process import background_python, spawn_detached
 
 REQUEST_TIMEOUT_SECONDS = 0.5
 STARTUP_WAIT_SECONDS = 4.0
@@ -13,16 +12,31 @@ STARTUP_POLL_SECONDS = 0.05
 MAX_LOG_BYTES = 1_000_000
 
 
+@dataclass(frozen=True)
+class Endpoint:
+    port: int
+    token: str
+
+    @classmethod
+    def read(cls, paths: Paths) -> "Endpoint | None":
+        try:
+            data = json.loads(paths.endpoint.read_text())
+            return cls(int(data["port"]), str(data["token"]))
+        except (OSError, ValueError, KeyError):
+            return None
+
+
 class DaemonClient:
     def __init__(self, paths: Paths):
         self._paths = paths
 
     def request(self, message: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict | None:
+        endpoint = Endpoint.read(self._paths)
+        if endpoint is None:
+            return None
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                connection.settimeout(timeout)
-                connection.connect(str(self._paths.socket))
-                connection.sendall(json.dumps(message).encode() + b"\n")
+            with socket.create_connection(("127.0.0.1", endpoint.port), timeout=timeout) as connection:
+                connection.sendall(json.dumps({**message, "token": endpoint.token}).encode() + b"\n")
                 return json.loads(_read_line(connection))
         except (OSError, ValueError):
             return None
@@ -52,15 +66,7 @@ class DaemonClient:
         self._paths.home.mkdir(parents=True, exist_ok=True)
         if self._paths.log.exists() and self._paths.log.stat().st_size > MAX_LOG_BYTES:
             self._paths.log.unlink()
-        with open(self._paths.log, "ab") as log:
-            subprocess.Popen(
-                [sys.executable, "-m", "speak", "daemon"],
-                stdin=subprocess.DEVNULL,
-                stdout=log,
-                stderr=log,
-                start_new_session=True,
-                env=os.environ.copy(),
-            )
+        spawn_detached([background_python(), "-m", "speak", "daemon"], self._paths.log)
 
 
 def _read_line(connection: socket.socket) -> bytes:

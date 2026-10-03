@@ -1,10 +1,11 @@
 import asyncio
 import contextlib
-import fcntl
 import json
 import logging
 import os
+import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -16,6 +17,7 @@ from speak.daemon.player import Player
 from speak.daemon.speaker import Speaker
 from speak.paths import Paths
 from speak.settings import Settings, SettingsStore
+from speak.system.lock import InstanceLock, write_private
 from speak.text.lexicon import Lexicon
 from speak.text.speech import Segment, SpeechPreparer
 
@@ -34,8 +36,11 @@ class Engines(Protocol):
     def synthesize(self, text: str, lang: str, settings: Settings) -> np.ndarray: ...
 
 
+StopRequest = Callable[[str], None]
+
+
 class Sidecar(Protocol):
-    def start(self, settings: Settings) -> None: ...
+    def start(self, settings: Settings, port: int, token: str, request_stop: StopRequest) -> None: ...
 
     def stop(self) -> None: ...
 
@@ -61,16 +66,17 @@ class Daemon:
         self._last_activity = time.monotonic()
         self._last_latency_ms: float | None = None
         self._shutdown = asyncio.Event()
+        self._token = secrets.token_hex(16)
 
     async def run(self) -> None:
-        self._paths.home.mkdir(parents=True, exist_ok=True)
-        with open(self._paths.lock, "w") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                log.info("another daemon is already running")
-                return
+        lock = InstanceLock(self._paths.lock)
+        if not lock.acquire():
+            log.info("another daemon is already running")
+            return
+        try:
             await self._serve()
+        finally:
+            lock.release()
 
     def request_shutdown(self) -> None:
         self._shutdown.set()
@@ -85,16 +91,17 @@ class Daemon:
         return handler(message) or {"ok": True}
 
     async def _serve(self) -> None:
-        self._paths.socket.unlink(missing_ok=True)
-        server = await asyncio.start_unix_server(self._serve_client, path=str(self._paths.socket))
-        os.chmod(self._paths.socket, 0o600)
+        loop = asyncio.get_running_loop()
+        server = await asyncio.start_server(self._serve_client, host="127.0.0.1", port=0)
+        port = server.sockets[0].getsockname()[1]
+        write_private(self._paths.endpoint, json.dumps({"port": port, "token": self._token, "pid": os.getpid()}))
         self._speaker.start()
-        asyncio.get_running_loop().run_in_executor(None, self._player.prepare)
+        loop.run_in_executor(None, self._player.prepare)
         self._engines.load_in_background(self._settings)
         if self._sidecar:
-            self._sidecar.start(self._settings)
-        housekeeping = asyncio.get_running_loop().create_task(self._housekeep())
-        log.info("daemon listening on %s (pid %s)", self._paths.socket, os.getpid())
+            self._sidecar.start(self._settings, port, self._token, self._stop_from_thread(loop))
+        housekeeping = loop.create_task(self._housekeep())
+        log.info("daemon listening on 127.0.0.1:%s (pid %s)", port, os.getpid())
         try:
             await self._shutdown.wait()
         finally:
@@ -105,13 +112,16 @@ class Daemon:
             self._player.close()
             if self._sidecar:
                 self._sidecar.stop()
-            self._paths.socket.unlink(missing_ok=True)
+            self._paths.endpoint.unlink(missing_ok=True)
             log.info("daemon stopped")
 
     async def _serve_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            line = await reader.readline()
-            response = await self.handle(json.loads(line))
+            message = json.loads(await reader.readline())
+            if not secrets.compare_digest(str(message.pop("token", "")), self._token):
+                response = {"ok": False, "error": "unauthorized"}
+            else:
+                response = await self.handle(message)
         except Exception as error:
             log.exception("request failed")
             response = {"ok": False, "error": str(error)}
@@ -119,6 +129,12 @@ class Daemon:
         with contextlib.suppress(ConnectionError):
             await writer.drain()
         writer.close()
+
+    def _stop_from_thread(self, loop: asyncio.AbstractEventLoop) -> StopRequest:
+        def request_stop(source: str) -> None:
+            loop.call_soon_threadsafe(self._op_stop, {"source": source})
+
+        return request_stop
 
     def _op_ping(self, _message: dict) -> None:
         return None

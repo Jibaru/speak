@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from collections import deque
@@ -6,7 +7,10 @@ from typing import Protocol
 
 import numpy as np
 
-BLOCK_SIZE = 480
+BLOCK_FRAMES = 480
+CLOSE_AFTER_IDLE_SECONDS = 30
+
+log = logging.getLogger(__name__)
 
 
 class Player(Protocol):
@@ -17,8 +21,6 @@ class Player(Protocol):
     def prepare(self) -> None: ...
 
     def is_idle(self) -> bool: ...
-
-    def idle_seconds(self) -> float: ...
 
     def drain_latencies(self) -> list[float]: ...
 
@@ -34,39 +36,27 @@ class _Chunk:
     position: int = 0
 
 
-class StreamPlayer:
-    def __init__(self, sample_rate: int, close_after_idle_seconds: float = 30):
-        self._sample_rate = sample_rate
-        self._close_after_idle_seconds = close_after_idle_seconds
+class AudioBuffer:
+    """Thread-safe queue of audio chunks read by the audio callback."""
+
+    def __init__(self):
         self._chunks: deque[_Chunk] = deque()
         self._lock = threading.Lock()
-        self._stream_lock = threading.Lock()
-        self._stream = None
-        self._last_audio_at = time.monotonic()
         self._latencies: deque[float] = deque(maxlen=64)
+        self.last_audio_at = time.monotonic()
 
-    def enqueue(self, audio: np.ndarray, requested_at: float | None = None) -> None:
-        if audio.size == 0:
-            return
+    def push(self, audio: np.ndarray, requested_at: float | None) -> None:
         with self._lock:
             self._chunks.append(_Chunk(audio.astype(np.float32, copy=False), requested_at))
-            self._last_audio_at = time.monotonic()
-        self._ensure_stream()
+            self.last_audio_at = time.monotonic()
 
     def clear(self) -> None:
         with self._lock:
             self._chunks.clear()
 
-    def prepare(self) -> None:
-        self._last_audio_at = time.monotonic()
-        self._ensure_stream()
-
-    def is_idle(self) -> bool:
+    def is_empty(self) -> bool:
         with self._lock:
             return not self._chunks
-
-    def idle_seconds(self) -> float:
-        return 0.0 if not self.is_idle() else time.monotonic() - self._last_audio_at
 
     def drain_latencies(self) -> list[float]:
         with self._lock:
@@ -74,47 +64,121 @@ class StreamPlayer:
             self._latencies.clear()
         return latencies
 
-    def close_if_idle(self) -> None:
-        if self._stream is not None and self.idle_seconds() > self._close_after_idle_seconds:
-            self.close()
-
-    def close(self) -> None:
-        with self._stream_lock:
-            stream, self._stream = self._stream, None
-        if stream is not None:
-            stream.abort()
-            stream.close()
-
-    def _ensure_stream(self) -> None:
-        with self._stream_lock:
-            if self._stream is not None:
-                return
-            import sounddevice
-
-            stream = sounddevice.OutputStream(
-                samplerate=self._sample_rate,
-                channels=1,
-                dtype="float32",
-                blocksize=BLOCK_SIZE,
-                latency="low",
-                callback=self._fill,
-            )
-            stream.start()
-            self._stream = stream
-
-    def _fill(self, output, frames, _time, _status) -> None:
+    def read_into(self, output: np.ndarray) -> None:
         output.fill(0)
-        written = 0
+        frames, written = output.shape[0], 0
         with self._lock:
             while written < frames and self._chunks:
                 chunk = self._chunks[0]
                 if chunk.position == 0 and chunk.requested_at is not None:
                     self._latencies.append(time.monotonic() - chunk.requested_at)
                 take = min(frames - written, chunk.audio.size - chunk.position)
-                output[written : written + take, 0] = chunk.audio[chunk.position : chunk.position + take]
+                output[written : written + take] = chunk.audio[chunk.position : chunk.position + take]
                 written += take
                 chunk.position += take
                 if chunk.position >= chunk.audio.size:
                     self._chunks.popleft()
             if written:
-                self._last_audio_at = time.monotonic()
+                self.last_audio_at = time.monotonic()
+
+
+class BufferedPlayer:
+    def __init__(self, sample_rate: int):
+        self._sample_rate = sample_rate
+        self._buffer = AudioBuffer()
+        self._stream_lock = threading.Lock()
+        self._stream = None
+
+    def enqueue(self, audio: np.ndarray, requested_at: float | None = None) -> None:
+        if audio.size == 0:
+            return
+        self._buffer.push(audio, requested_at)
+        self.prepare()
+
+    def clear(self) -> None:
+        self._buffer.clear()
+
+    def prepare(self) -> None:
+        with self._stream_lock:
+            if self._stream is None:
+                self._stream = self._open()
+        self._buffer.last_audio_at = max(self._buffer.last_audio_at, time.monotonic())
+
+    def is_idle(self) -> bool:
+        return self._buffer.is_empty()
+
+    def drain_latencies(self) -> list[float]:
+        return self._buffer.drain_latencies()
+
+    def close_if_idle(self) -> None:
+        idle_for = time.monotonic() - self._buffer.last_audio_at
+        if self._stream is not None and self.is_idle() and idle_for > CLOSE_AFTER_IDLE_SECONDS:
+            self.close()
+
+    def close(self) -> None:
+        with self._stream_lock:
+            stream, self._stream = self._stream, None
+        if stream is not None:
+            self._close(stream)
+
+    def _open(self):
+        raise NotImplementedError
+
+    def _close(self, stream) -> None:
+        raise NotImplementedError
+
+
+class SounddevicePlayer(BufferedPlayer):
+    def _open(self):
+        import sounddevice
+
+        stream = sounddevice.OutputStream(
+            samplerate=self._sample_rate,
+            channels=1,
+            dtype="float32",
+            blocksize=BLOCK_FRAMES,
+            latency="low",
+            callback=lambda output, _frames, _time, _status: self._buffer.read_into(output[:, 0]),
+        )
+        stream.start()
+        return stream
+
+    def _close(self, stream) -> None:
+        stream.abort()
+        stream.close()
+
+
+class MiniaudioPlayer(BufferedPlayer):
+    def _open(self):
+        import miniaudio
+
+        device = miniaudio.PlaybackDevice(
+            output_format=miniaudio.SampleFormat.FLOAT32,
+            nchannels=1,
+            sample_rate=self._sample_rate,
+            buffersize_msec=20,
+        )
+        generator = self._frames()
+        next(generator)
+        device.start(generator)
+        return device
+
+    def _close(self, device) -> None:
+        device.close()
+
+    def _frames(self):
+        required = yield b""
+        while True:
+            output = np.zeros(required, dtype=np.float32)
+            self._buffer.read_into(output)
+            required = yield output.tobytes()
+
+
+def create_player(sample_rate: int) -> BufferedPlayer:
+    try:
+        import sounddevice  # noqa: F401  (raises OSError when PortAudio is missing)
+
+        return SounddevicePlayer(sample_rate)
+    except OSError:
+        log.info("PortAudio not available, playing audio through miniaudio")
+        return MiniaudioPlayer(sample_rate)

@@ -4,18 +4,22 @@ import CoreAudio
 import Foundation
 
 struct Options {
-    var socketPath = ""
+    var port: UInt16 = 0
+    var token = ""
     var hotkey = "option+escape"
     var stopOnMic = false
+    var selfTest = false
 
     static func parse(_ arguments: [String]) -> Options {
         var options = Options()
         var iterator = arguments.dropFirst().makeIterator()
         while let argument = iterator.next() {
             switch argument {
-            case "--socket": options.socketPath = iterator.next() ?? ""
+            case "--port": options.port = UInt16(iterator.next() ?? "") ?? 0
+            case "--token": options.token = iterator.next() ?? ""
             case "--hotkey": options.hotkey = iterator.next() ?? options.hotkey
             case "--stop-on-mic": options.stopOnMic = true
+            case "--self-test": options.selfTest = true
             default: log("ignoring unknown argument \(argument)")
             }
         }
@@ -27,27 +31,23 @@ func log(_ message: String) {
     FileHandle.standardError.write("speak-helper: \(message)\n".data(using: .utf8)!)
 }
 
-func requestStop(socketPath: String, source: String) {
-    let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+func requestStop(port: UInt16, token: String, source: String) {
+    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
     guard descriptor >= 0 else { return }
     defer { close(descriptor) }
 
-    var address = sockaddr_un()
-    address.sun_family = sa_family_t(AF_UNIX)
-    let pathCapacity = MemoryLayout.size(ofValue: address.sun_path)
-    withUnsafeMutablePointer(to: &address.sun_path) { pointer in
-        pointer.withMemoryRebound(to: CChar.self, capacity: pathCapacity) { path in
-            _ = strlcpy(path, socketPath, pathCapacity)
-        }
-    }
+    var address = sockaddr_in()
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = port.bigEndian
+    address.sin_addr.s_addr = inet_addr("127.0.0.1")
     let connected = withUnsafePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
         }
     }
     guard connected == 0 else { return }
 
-    let message = "{\"op\":\"stop\",\"source\":\"\(source)\"}\n"
+    let message = "{\"op\":\"stop\",\"source\":\"\(source)\",\"token\":\"\(token)\"}\n"
     _ = message.withCString { write(descriptor, $0, strlen($0)) }
     var buffer = [UInt8](repeating: 0, count: 256)
     _ = read(descriptor, &buffer, buffer.count)
@@ -158,21 +158,26 @@ final class MicrophoneMonitor {
 }
 
 let options = Options.parse(CommandLine.arguments)
-guard !options.socketPath.isEmpty else {
-    log("missing --socket")
+guard options.port != 0, !options.token.isEmpty else {
+    log("missing --port or --token")
     exit(2)
+}
+
+if options.selfTest {
+    requestStop(port: options.port, token: options.token, source: "helper-self-test")
+    exit(0)
 }
 
 let application = NSApplication.shared
 application.setActivationPolicy(.prohibited)
 
-if Hotkey.register(options.hotkey, onPress: { requestStop(socketPath: options.socketPath, source: "hotkey") }) {
+if Hotkey.register(options.hotkey, onPress: { requestStop(port: options.port, token: options.token, source: "hotkey") }) {
     log("hotkey \(options.hotkey) registered")
 } else {
     log("could not register hotkey \(options.hotkey)")
 }
 
-let microphone = MicrophoneMonitor { requestStop(socketPath: options.socketPath, source: "mic") }
+let microphone = MicrophoneMonitor { requestStop(port: options.port, token: options.token, source: "mic") }
 if options.stopOnMic {
     microphone.start()
     log("watching microphone")

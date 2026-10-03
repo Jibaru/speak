@@ -53,17 +53,17 @@ def _parser() -> argparse.ArgumentParser:
 def _run_daemon(_args, paths: Paths) -> None:
     import asyncio
 
-    from speak.daemon.helper import Helper
-    from speak.daemon.player import StreamPlayer
+    from speak.daemon.player import create_player
     from speak.daemon.server import Daemon
     from speak.engines import registry
     from speak.engines.base import SAMPLE_RATE
     from speak.engines.manager import EngineManager
+    from speak.interrupts import create_sidecar
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     engine_name = registry.resolve_engine_name(SettingsStore(paths).load())
     engines = EngineManager(lambda: registry.create_primary(engine_name, paths), registry.create_fallback())
-    daemon = Daemon(paths, engines, StreamPlayer(SAMPLE_RATE), Helper(paths))
+    daemon = Daemon(paths, engines, create_player(SAMPLE_RATE), create_sidecar(paths))
     asyncio.run(daemon.run())
 
 
